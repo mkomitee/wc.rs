@@ -1,0 +1,9 @@
+[package]
+name = "wc"
+version = "0.0.1"
+authors = ["Michael Komitee <mkomitee@gmail.com>"]
+
+
+[dependencies]
+docopt = "*"
+rustc-serialize = "*"
