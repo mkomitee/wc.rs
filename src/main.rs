@@ -79,52 +79,47 @@ struct FileInfo{
 
 type FileInfoResult = Result<FileInfo, ProcessingError>;
 
-impl FileInfo {
-    fn wrap_error<'a>(e: std::io::Error) -> FileInfoResult {
-        Err(ProcessingError::IO(e))
-    }
-    fn process<T: Read>(reader: T) -> FileInfoResult {
-        let mut info = FileInfo{
-            bytes: 0,
-            chars: 0,
-            lines: 0,
-            words: 0,
-            max_line_length: 0,
-        };
-        let mut rbuf = BufReader::new(reader);
-        let mut lbuf: Vec<u8> = Vec::new();
-        loop {
-            let size = try!(rbuf.read_until(LF as u8, &mut lbuf));
-            info.bytes += size;
-            if size == 0 {
-                break;
-            }
-            // Create a scope because we're going to borrow lbuf and
-            // the borrow must end before we can clear it.
-            {
-                let line = try!(from_utf8(&lbuf));
-                let size = line.chars().count();
-                info.max_line_length = match line.chars().last() {
-                    Some(c) => {
-                        if c == LF {
-                            info.lines += 1;
-                            max(info.max_line_length, size - 1)
-                        } else {
-                            max(info.max_line_length, size)
-                        }
-                    },
-                    None => max(info.max_line_length, size),
-                };
-                info.chars += size;
-                let mut words: Vec<&str> = line.split(|c: char| c.is_whitespace()).collect();
-                words.retain(|s: &&str| s.len() > 0);
-                // words.retain(|s: &&str| s.len() > 0);
-                info.words += words.len();
-            }
-            lbuf.clear()
+fn process_filehandle<T: Read>(reader: T) -> FileInfoResult {
+    let mut info = FileInfo{
+        bytes: 0,
+        chars: 0,
+        lines: 0,
+        words: 0,
+        max_line_length: 0,
+    };
+    let mut rbuf = BufReader::new(reader);
+    let mut lbuf: Vec<u8> = Vec::new();
+    loop {
+        let size = try!(rbuf.read_until(LF as u8, &mut lbuf));
+        info.bytes += size;
+        if size == 0 {
+            break;
         }
-        Ok(info)
+        // Create a scope because we're going to borrow lbuf and
+        // the borrow must end before we can clear it.
+        {
+            let line = try!(from_utf8(&lbuf));
+            let size = line.chars().count();
+            info.max_line_length = match line.chars().last() {
+                Some(c) => {
+                    if c == LF {
+                        info.lines += 1;
+                        max(info.max_line_length, size - 1)
+                    } else {
+                        max(info.max_line_length, size)
+                    }
+                },
+                None => max(info.max_line_length, size),
+            };
+            info.chars += size;
+            let mut words: Vec<&str> = line.split(|c: char| c.is_whitespace()).collect();
+            words.retain(|s: &&str| s.len() > 0);
+            // words.retain(|s: &&str| s.len() > 0);
+            info.words += words.len();
+        }
+        lbuf.clear()
     }
+    Ok(info)
 }
 
 fn main() {
@@ -150,6 +145,7 @@ fn main() {
     }
 
     // TODO: Process --files0-from
+
     let mut results = Vec::new();
     let mut totals = FileInfo{
         bytes: 0,
@@ -161,12 +157,12 @@ fn main() {
     for file_arg in &args.arg_FILE {
         let filename = file_arg.as_ref();
         let result = match filename {
-            "-" => FileInfo::process(stdin()),
+            "-" => process_filehandle(stdin()),
             _ => {
                 let file = File::open(filename.to_string());
                 match file {
-                    Ok(f) => FileInfo::process(f),
-                    Err(e) => FileInfo::wrap_error(e),
+                    Ok(f) => process_filehandle(f),
+                    Err(e) => Err(ProcessingError::IO(e)),
                 }
             }
         };
@@ -182,12 +178,43 @@ fn main() {
         }
         results.push((filename, result));
     }
-    results.push(("total", Ok(totals)));
+
+    // This is used for formatting. The number in the byte count will
+    // be the largest, and so will be the widest string, so it's
+    // suitable for a field width.
+    let field_size = totals.bytes.to_string().len();
+
+    if results.len() > 1 {
+        results.push(("total", Ok(totals)));
+    }
 
     // Present the results
     for data in results.iter() {
         let (filename, ref result) = *data;
-        println!("{}: {:?}", filename, result);
+        match *result {
+            Ok(ref r) => {
+                let mut parts = Vec::new();
+                if args.flag_lines {parts.push(r.lines)}
+                if args.flag_words {parts.push(r.words)}
+                if args.flag_bytes {parts.push(r.bytes)}
+                if args.flag_chars {parts.push(r.chars)}
+                if args.flag_max_line_length {parts.push(r.max_line_length)}
+                if parts.len() == 0 {
+                    parts.push(r.lines);
+                    parts.push(r.words);
+                    parts.push(r.bytes);
+                }
+                for part in parts {
+                    print!("{:1$} ", part, field_size);
+                }
+                println!("{}", filename);
+            },
+            Err(ref e) => {
+                match *e {
+                    ProcessingError::IO(ref e) => println!("wc: {}: {}", filename, e),
+                    ProcessingError::Utf8(ref e) => println!("wc: {}: {}", filename, e),
+                }
+            },
+        }
     }
-
 }
