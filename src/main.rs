@@ -161,7 +161,7 @@ fn main() {
     };
     for file_arg in &args.arg_FILE {
         let filename = file_arg.as_ref();
-        results.insert(filename, match filename {
+        let result = match filename {
             "-" => FileInfo::process(stdin()),
             _ => {
                 let file = File::open(filename.to_string());
@@ -170,10 +170,8 @@ fn main() {
                     Err(e) => FileInfo::wrap_error(e),
                 }
             }
-        });
-    }
-    for (filename, result) in results.iter() {
-        match *result {
+        };
+        match result {
             Ok(ref r) => {
                 totals.chars += r.chars;
                 totals.lines += r.lines;
@@ -183,6 +181,9 @@ fn main() {
             },
             Err(_) => {},
         }
+        results.insert(filename, result);
+    }
+    for (filename, result) in results.iter() {
         println!("{}: {:?}", filename, result);
     }
     println!("total: {:?}", totals);
