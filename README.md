@@ -3,4 +3,4 @@ wc implemented in rust
 
 
 ## TODO
-See if try! can simplify some of this.
+Handle --files0-from
