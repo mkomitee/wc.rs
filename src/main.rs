@@ -112,7 +112,9 @@ fn process_filehandle<T: Read>(reader: T) -> FileInfoResult {
                 None => max(info.max_line_length, size),
             };
             info.chars += size;
-            let mut words: Vec<&str> = line.split(|c: char| c.is_whitespace()).collect();
+            let mut words: Vec<&str> = line
+                .split(|c: char| c.is_whitespace())
+                .collect();
             words.retain(|s: &&str| s.len() > 0);
             // words.retain(|s: &&str| s.len() > 0);
             info.words += words.len();
@@ -172,7 +174,8 @@ fn main() {
                 totals.lines += r.lines;
                 totals.bytes += r.bytes;
                 totals.words += r.words;
-                totals.max_line_length = max(totals.max_line_length, r.max_line_length);
+                totals.max_line_length = max(totals.max_line_length,
+                                             r.max_line_length);
             },
             Err(_) => {},
         }
@@ -193,26 +196,43 @@ fn main() {
         let (filename, ref result) = *data;
         match *result {
             Ok(ref r) => {
-                let mut parts = Vec::new();
-                if args.flag_lines {parts.push(r.lines)}
-                if args.flag_words {parts.push(r.words)}
-                if args.flag_bytes {parts.push(r.bytes)}
-                if args.flag_chars {parts.push(r.chars)}
-                if args.flag_max_line_length {parts.push(r.max_line_length)}
-                if parts.len() == 0 {
-                    parts.push(r.lines);
-                    parts.push(r.words);
-                    parts.push(r.bytes);
+                // let mut parts = Vec::new();
+                let mut requested_field = false;
+                if args.flag_lines {
+                    print!("{:1$} ", r.lines, field_size);
+                    requested_field = true;
                 }
-                for part in parts {
-                    print!("{:1$} ", part, field_size);
+                if args.flag_words {
+                    print!("{:1$} ", r.words, field_size);
+                    requested_field = true;
+                }
+                if args.flag_bytes {
+                    print!("{:1$} ", r.bytes, field_size);
+                    requested_field = true;
+                }
+                if args.flag_chars {
+                    print!("{:1$} ", r.chars, field_size);
+                    requested_field = true;
+                }
+                if args.flag_max_line_length {
+                    print!("{:1$} ", r.max_line_length, field_size);
+                    requested_field = true;
+                }
+                if !requested_field {
+                    print!("{:1$} ", r.lines, field_size);
+                    print!("{:1$} ", r.words, field_size);
+                    print!("{:1$} ", r.bytes, field_size);
                 }
                 println!("{}", filename);
             },
             Err(ref e) => {
                 match *e {
-                    ProcessingError::IO(ref e) => println!("wc: {}: {}", filename, e),
-                    ProcessingError::Utf8(ref e) => println!("wc: {}: {}", filename, e),
+                    ProcessingError::IO(ref e) => {
+                        println!("wc: {}: {}", filename, e)
+                    },
+                    ProcessingError::Utf8(ref e) => {
+                        println!("wc: {}: {}", filename, e)
+                    },
                 }
             },
         }
