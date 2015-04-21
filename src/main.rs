@@ -82,8 +82,10 @@ fn process_reader<T: std::io::Read>(reader: T) -> FileInfoResult {
         words: 0,
         max_line_length: 0,
     };
+    // TODO: Only to as much processing as is absolutely necessary to
+    // provide the data we will end up printing.
     let mut rbuf = std::io::BufReader::new(reader);
-    let mut lbuf: Vec<u8> = Vec::new();
+    let mut lbuf = Vec::new();
     loop {
         let size = try!(rbuf.read_until(LF as u8, &mut lbuf));
         info.bytes += size;
@@ -225,7 +227,6 @@ fn main() {
                 println!("{}", filename);
             },
             Err(ref e) => {
-
                 errors_encountered = true;
                 match *e {
                     ProcessingError::IO(ref e) => {
