@@ -6,7 +6,6 @@ use std::fs::File;
 use std::process::exit;
 use std::str::from_utf8;
 use std::cmp::max;
-use std::collections::HashMap;
 
 use docopt::Docopt;
 
@@ -151,7 +150,7 @@ fn main() {
     }
 
     // TODO: Process --files0-from
-    let mut results = HashMap::new();
+    let mut results = Vec::new();
     let mut totals = FileInfo{
         bytes: 0,
         chars: 0,
@@ -181,11 +180,14 @@ fn main() {
             },
             Err(_) => {},
         }
-        results.insert(filename, result);
+        results.push((filename, result));
     }
-    for (filename, result) in results.iter() {
+    results.push(("total", Ok(totals)));
+
+    // Present the results
+    for data in results.iter() {
+        let (filename, ref result) = *data;
         println!("{}: {:?}", filename, result);
     }
-    println!("total: {:?}", totals);
 
 }
