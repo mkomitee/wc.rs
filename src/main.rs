@@ -85,7 +85,6 @@ impl FileInfo {
         Err(ProcessingError::IO(e))
     }
     fn process<T: Read>(reader: T) -> FileInfoResult {
-        // TODO: Process reader
         let mut info = FileInfo{
             bytes: 0,
             chars: 0,
@@ -93,7 +92,6 @@ impl FileInfo {
             words: 0,
             max_line_length: 0,
         };
-
         let mut rbuf = BufReader::new(reader);
         let mut lbuf: Vec<u8> = Vec::new();
         loop {
@@ -108,8 +106,8 @@ impl FileInfo {
                 let line = try!(from_utf8(&lbuf));
                 let size = line.chars().count();
                 info.max_line_length = match line.chars().last() {
-                    Some(x) => {
-                        if x == LF {
+                    Some(c) => {
+                        if c == LF {
                             info.lines += 1;
                             max(info.max_line_length, size - 1)
                         } else {
@@ -119,13 +117,10 @@ impl FileInfo {
                     None => max(info.max_line_length, size),
                 };
                 info.chars += size;
-                let words: Vec<&str> = line.split(|c: char| c.is_whitespace()).collect();
-                for word in words {
-                    if word.len() > 0 {
-                        info.words += 1;
-                    }
-
-                }
+                let mut words: Vec<&str> = line.split(|c: char| c.is_whitespace()).collect();
+                words.retain(|s: &&str| s.len() > 0);
+                // words.retain(|s: &&str| s.len() > 0);
+                info.words += words.len();
             }
             lbuf.clear()
         }
@@ -157,7 +152,6 @@ fn main() {
 
     // TODO: Process --files0-from
     let mut results = HashMap::new();
-
     let mut totals = FileInfo{
         bytes: 0,
         chars: 0,
