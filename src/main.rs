@@ -191,6 +191,8 @@ fn main() {
         results.push(("total", Ok(totals)));
     }
 
+    let mut errors_encountered = false;
+
     // Present the results
     for data in results.iter() {
         let (filename, ref result) = *data;
@@ -226,6 +228,8 @@ fn main() {
                 println!("{}", filename);
             },
             Err(ref e) => {
+
+                errors_encountered = true;
                 match *e {
                     ProcessingError::IO(ref e) => {
                         println!("wc: {}: {}", filename, e)
@@ -236,5 +240,9 @@ fn main() {
                 }
             },
         }
+    }
+
+    if errors_encountered {
+        exit(1);
     }
 }
