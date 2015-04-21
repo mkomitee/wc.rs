@@ -113,7 +113,6 @@ fn process_reader<T: std::io::Read>(reader: T) -> FileInfoResult {
                 .split(|c: char| c.is_whitespace())
                 .collect();
             words.retain(|s: &&str| s.len() > 0);
-            // words.retain(|s: &&str| s.len() > 0);
             info.words += words.len();
         }
         lbuf.clear()
