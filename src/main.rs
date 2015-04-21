@@ -74,7 +74,7 @@ struct FileInfo{
 
 type FileInfoResult = Result<FileInfo, ProcessingError>;
 
-fn process_filehandle<T: std::io::Read>(reader: T) -> FileInfoResult {
+fn process_reader<T: std::io::Read>(reader: T) -> FileInfoResult {
     let mut info = FileInfo{
         bytes: 0,
         chars: 0,
@@ -156,11 +156,11 @@ fn main() {
     for file_arg in &args.arg_FILE {
         let filename = file_arg.as_ref();
         let result = match filename {
-            "-" => process_filehandle(std::io::stdin()),
+            "-" => process_reader(std::io::stdin()),
             _ => {
                 let file = std::fs::File::open(filename.to_string());
                 match file {
-                    Ok(f) => process_filehandle(f),
+                    Ok(f) => process_reader(f),
                     Err(e) => Err(ProcessingError::IO(e)),
                 }
             }
