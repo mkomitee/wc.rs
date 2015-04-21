@@ -102,6 +102,8 @@ impl FileInfo {
             if size == 0 {
                 break;
             }
+            // Create a scope because we're going to borrow lbuf and
+            // the borrow must end before we can clear it.
             {
                 let line = try!(from_utf8(&lbuf));
                 let size = line.chars().count();
