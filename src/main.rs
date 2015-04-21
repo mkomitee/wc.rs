@@ -95,6 +95,8 @@ fn process_reader<T: std::io::Read>(reader: T) -> FileInfoResult {
         // Create a scope because we're going to borrow lbuf and
         // the borrow must end before we can clear it.
         {
+            // TODO: Handle files which are not utf8-encoded. Right
+            // now we get an error here.
             let line = try!(std::str::from_utf8(&lbuf));
             let size = line.chars().count();
             info.max_line_length = match line.chars().last() {
