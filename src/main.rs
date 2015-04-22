@@ -56,12 +56,8 @@ enum ProcessingError {
 impl std::fmt::Display for ProcessingError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match *self {
-            ProcessingError::IO(ref e) => {
-                write!(f, "{}", e)
-            },
-            ProcessingError::Utf8(ref e) => {
-                write!(f, "{}", e)
-            },
+            ProcessingError::IO(ref e) => write!(f, "{}", e),
+            ProcessingError::Utf8(ref e) => write!(f, "{}", e),
         }
     }
 }
@@ -185,9 +181,7 @@ fn main() {
     let mut files: Vec<String> = Vec::new();
     if args.flag_files0_from.len() != 0 {
         let split_results = match args.flag_files0_from.as_ref() {
-            "-" => {
-                split_file_on_nulls(std::io::stdin())
-            },
+            "-" => split_file_on_nulls(std::io::stdin()),
             _ => {
                 match std::fs::File::open(&args.flag_files0_from) {
                     Ok(f) => split_file_on_nulls(f),
@@ -200,9 +194,7 @@ fn main() {
             },
         };
         match split_results {
-            Ok(parts) => {
-                files.extend(parts);
-            },
+            Ok(parts) => files.extend(parts),
             Err(e) => {
                 println_stderr!("wc: error reading {}: {}",
                                 args.flag_files0_from, e);
