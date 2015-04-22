@@ -1,8 +1,23 @@
 # wc.rs
 wc implemented in rust
 
+## Is it any good?
+
+It works, ... but probably not. I have no idea what I'm doing in rust,
+and this is what I'm doing to teach myself.
+
+## Compiling & Using
+
+This is confirmed to build w/ rust beta2.
+
+```
+git clone http://github.com/mkomitee/wc.rs
+cd wc.rs
+cargo build
+target/debug/wc -h
+```
+
 ## TODO
-* Handle --files0-from
 * To improve performance, only process data if it needs to be printed.
   This means handing off the set of required fields to process_reader,
   and short-circuiting some of the processing used to extract `bytes`,
