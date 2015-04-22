@@ -18,10 +18,12 @@ target/debug/wc -h
 ```
 
 ## TODO
-* To improve performance, only process data if it needs to be printed.
-  This means handing off the set of required fields to process_reader,
-  and short-circuiting some of the processing used to extract `bytes`,
-  `lines`, `chars`, `max_line_length`, or `words` if they're not needed.
+* Improve performance. It's incredibly inefficient. While it won't be
+  sufficient, one idea to improve performance is to only process data
+  if it needs to be printed. This means handing off the set of required
+  fields to process_reader, and short-circuiting some of the processing
+  used to extract `bytes`, `lines`, `chars`, `max_line_length`, or 
+  `words` if they're not needed.
 * Figure out how to detect/handle non-utf8 encoded files. Right now
   wc.rs yields an error in such cases:
 
