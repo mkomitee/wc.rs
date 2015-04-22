@@ -159,7 +159,7 @@ fn split_file_on_nulls(filename: &str) -> NullDelimitedFileResult {
         }
         {
             let line = try!(std::str::from_utf8(&lbuf));
-            result.push(line.to_string());
+            result.push(line.trim_right_matches(NULL).to_string());
         }
         lbuf.clear()
     }
