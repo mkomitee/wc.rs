@@ -209,6 +209,10 @@ fn main() {
                 std::process::exit(1);
             },
         };
+        if &args.flag_files0_from == "-" && files.contains(&"-".to_string()) {
+            println_stderr!("wc: when reading file names from stdin, no file name of '-' allowed");
+            std::process::exit(1);
+        }
     } else {
         files.extend(args.arg_FILE);
     };
