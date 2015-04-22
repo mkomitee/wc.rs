@@ -5,6 +5,7 @@ use std::io::{Write, BufRead};
 use docopt::Docopt;
 
 static LF: char = '\n';
+static NULL: char = '\0';
 static VERSION: &'static str = "0.0.1";
 static USAGE: &'static str = "
 Usage: wc [options] FILE...
@@ -50,6 +51,19 @@ struct Args {
 enum ProcessingError {
     IO(std::io::Error),
     Utf8(std::str::Utf8Error),
+}
+
+impl std::fmt::Display for ProcessingError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match *self {
+            ProcessingError::IO(ref e) => {
+                write!(f, "{}", e)
+            },
+            ProcessingError::Utf8(ref e) => {
+                write!(f, "{}", e)
+            },
+        }
+    }
 }
 
 impl From<std::io::Error> for ProcessingError {
@@ -122,6 +136,36 @@ fn process_reader<T: std::io::Read>(reader: T) -> FileInfoResult {
     Ok(info)
 }
 
+macro_rules! println_stderr(
+    ($($arg:tt)*) => (
+        match writeln!(&mut ::std::io::stderr(), $($arg)* ) {
+            Ok(_) => {},
+            Err(x) => panic!("Unable to write to stderr: {}", x),
+        }
+    )
+);
+
+type NullDelimitedFileResult<'a> = Result<Vec<String>, ProcessingError>;
+
+fn split_file_on_nulls(filename: &str) -> NullDelimitedFileResult {
+    let file = try!(std::fs::File::open(filename));
+    let mut result = Vec::new();
+    let mut rbuf = std::io::BufReader::new(file);
+    let mut lbuf = Vec::new();
+    loop {
+        let size = try!(rbuf.read_until(NULL as u8, &mut lbuf));
+        if size == 0 {
+            break;
+        }
+        {
+            let line = try!(std::str::from_utf8(&lbuf));
+            result.push(line.to_string());
+        }
+        lbuf.clear()
+    }
+    Ok(result)
+}
+
 fn main() {
     let args: Args = Docopt::new(USAGE)
         .and_then(|d| d.decode())
@@ -133,20 +177,26 @@ fn main() {
     }
 
     if args.flag_files0_from.len() != 0  && args.arg_FILE.len() != 0 {
-        match writeln!(&mut std::io::stderr(),
-                       "wc: file operands cannot be combined with --files0-from") {
-            Ok(_) => {},
-            Err(e) => panic!("Unable to write to stderr: {}", e)
-        }
-        match writeln!(&mut std::io::stderr(),
-                       "Try 'wc --help' for more information") {
-            Ok(_) => {},
-            Err(e) => panic!("Unable to write to stderr: {}", e)
-        }
+        println_stderr!("wc: file operands cannot be combined with --files0-from");
+        println_stderr!("Try 'wc --help' for more information");
         std::process::exit(1);
     }
 
-    // TODO: Process --files0-from
+    let mut files: Vec<String> = Vec::new();
+    if args.flag_files0_from.len() != 0 {
+        match split_file_on_nulls(&args.flag_files0_from) {
+            Ok(parts) => {
+                files.extend(parts);
+            },
+            Err(e) => {
+                println_stderr!("wc: cannot open {} for reading: {}",
+                                args.flag_files0_from, e);
+                std::process::exit(1);
+            },
+        }
+    } else {
+        files.extend(args.arg_FILE);
+    };
 
     let mut results = Vec::new();
     let mut totals = FileInfo{
@@ -156,9 +206,8 @@ fn main() {
         words: 0,
         max_line_length: 0,
     };
-    for file_arg in &args.arg_FILE {
-        let filename = file_arg.as_ref();
-        let result = match filename {
+    for filename in files {
+        let result = match filename.as_ref() {
             "-" => process_reader(std::io::stdin()),
             _ => {
                 let file = std::fs::File::open(filename.to_string());
@@ -188,14 +237,14 @@ fn main() {
     let field_size = totals.bytes.to_string().len();
 
     if results.len() > 1 {
-        results.push(("total", Ok(totals)));
+        results.push(("total".to_string(), Ok(totals)));
     }
 
     let mut errors_encountered = false;
 
     // Present the results
     for data in results.iter() {
-        let (filename, ref result) = *data;
+        let (ref filename, ref result) = *data;
         match *result {
             Ok(ref r) => {
                 // let mut parts = Vec::new();
@@ -229,14 +278,7 @@ fn main() {
             },
             Err(ref e) => {
                 errors_encountered = true;
-                match *e {
-                    ProcessingError::IO(ref e) => {
-                        println!("wc: {}: {}", filename, e)
-                    },
-                    ProcessingError::Utf8(ref e) => {
-                        println!("wc: {}: {}", filename, e)
-                    },
-                }
+                println_stderr!("wc: {}: {}", filename, e);
             },
         }
     }
