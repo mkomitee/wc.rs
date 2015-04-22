@@ -142,15 +142,15 @@ macro_rules! println_stderr(
             Ok(_) => {},
             Err(x) => panic!("Unable to write to stderr: {}", x),
         }
-    )
-);
+        )
+        );
 
-type NullDelimitedFileResult<'a> = Result<Vec<String>, ProcessingError>;
+// type NullDelimitedFileResult<'a> = Result<Vec<String>, ProcessingError>;
+type NullDelimitedFileResult = Result<Vec<String>, ProcessingError>;
 
-fn split_file_on_nulls(filename: &str) -> NullDelimitedFileResult {
-    let file = try!(std::fs::File::open(filename));
-    let mut result = Vec::new();
+fn split_file_on_nulls<T: std::io::Read>(file: T) -> NullDelimitedFileResult {
     let mut rbuf = std::io::BufReader::new(file);
+    let mut result = Vec::new();
     let mut lbuf = Vec::new();
     loop {
         let size = try!(rbuf.read_until(NULL as u8, &mut lbuf));
@@ -184,16 +184,31 @@ fn main() {
 
     let mut files: Vec<String> = Vec::new();
     if args.flag_files0_from.len() != 0 {
-        match split_file_on_nulls(&args.flag_files0_from) {
+        let split_results = match args.flag_files0_from.as_ref() {
+            "-" => {
+                split_file_on_nulls(std::io::stdin())
+            },
+            _ => {
+                match std::fs::File::open(&args.flag_files0_from) {
+                    Ok(f) => split_file_on_nulls(f),
+                    Err(e) => {
+                        println_stderr!("wc: cannot open {} for reading: {}",
+                                        args.flag_files0_from, e);
+                        std::process::exit(1);
+                    },
+                }
+            },
+        };
+        match split_results {
             Ok(parts) => {
                 files.extend(parts);
             },
             Err(e) => {
-                println_stderr!("wc: cannot open {} for reading: {}",
+                println_stderr!("wc: error reading {}: {}",
                                 args.flag_files0_from, e);
                 std::process::exit(1);
             },
-        }
+        };
     } else {
         files.extend(args.arg_FILE);
     };
