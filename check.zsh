@@ -1,7 +1,13 @@
 #!/usr/bin/env zsh
-set -x
 
 for bin in wc ./target/debug/wc; do
+    echo "Passing arguments to $bin:"
     time echo -n "HELLO WORLD\nHELLO WORLD" | $bin -cmlLw - *(.) missing
-    find *(.) -print0 | time $bin --files0-from -
+    echo
+done
+
+for bin in wc ./target/debug/wc; do
+    echo "Using --files0-from with $bin:"
+    time (find *(.) -print0 | $bin --files0-from -)
+    echo
 done
