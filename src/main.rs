@@ -1,7 +1,15 @@
 extern crate rustc_serialize;
 extern crate docopt;
 
-use std::io::{Write, BufRead};
+use std::cmp::max;
+use std::fmt::Result as FmtResult;
+use std::fmt::{Display, Formatter};
+use std::fs::File;
+use std::io::Error as IOError;
+use std::io::{BufReader, stderr, stdin};
+use std::io::{Write, BufRead, Read};
+use std::process::exit;
+use std::str::{Utf8Error, from_utf8};
 use docopt::Docopt;
 
 static LF: char = '\n';
@@ -48,28 +56,30 @@ struct Args {
 }
 
 #[derive(Debug)]
-enum ProcessingError {
-    IO(std::io::Error),
-    Utf8(std::str::Utf8Error),
+enum WCError {
+    IO(IOError),
+    Utf8(Utf8Error),
 }
 
-impl std::fmt::Display for ProcessingError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+type WCResult<T> = Result<T, WCError>;
+
+impl Display for WCError {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
         match *self {
-            ProcessingError::IO(ref e) => write!(f, "{}", e),
-            ProcessingError::Utf8(ref e) => write!(f, "{}", e),
+            WCError::IO(ref e) => write!(f, "{}", e),
+            WCError::Utf8(ref e) => write!(f, "{}", e),
         }
     }
 }
 
-impl From<std::io::Error> for ProcessingError {
-    fn from(e: std::io::Error) -> ProcessingError {
-        ProcessingError::IO(e)
+impl From<IOError> for WCError {
+    fn from(e: IOError) -> WCError {
+        WCError::IO(e)
     }
 }
-impl From<std::str::Utf8Error> for ProcessingError {
-    fn from(e: std::str::Utf8Error) -> ProcessingError {
-        ProcessingError::Utf8(e)
+impl From<Utf8Error> for WCError {
+    fn from(e: Utf8Error) -> WCError {
+        WCError::Utf8(e)
     }
 }
 
@@ -82,9 +92,9 @@ struct FileInfo{
     max_line_length: usize,
 }
 
-type FileInfoResult = Result<FileInfo, ProcessingError>;
+type FileInfoResult = WCResult<FileInfo>;
 
-fn process_reader<T: std::io::Read>(reader: T) -> FileInfoResult {
+fn process_reader<T: Read>(reader: T) -> FileInfoResult {
     let mut info = FileInfo{
         bytes: 0,
         chars: 0,
@@ -94,7 +104,7 @@ fn process_reader<T: std::io::Read>(reader: T) -> FileInfoResult {
     };
     // TODO: Only to as much processing as is absolutely necessary to
     // provide the data we will end up printing.
-    let mut rbuf = std::io::BufReader::new(reader);
+    let mut rbuf = BufReader::new(reader);
     let mut lbuf = Vec::new();
     loop {
         let size = try!(rbuf.read_until(LF as u8, &mut lbuf));
@@ -107,14 +117,14 @@ fn process_reader<T: std::io::Read>(reader: T) -> FileInfoResult {
         {
             // TODO: Handle files which are not utf8-encoded. Right
             // now we get an error here.
-            let line = try!(std::str::from_utf8(&lbuf));
+            let line = try!(from_utf8(&lbuf));
             let size = line.chars().count();
             let last = line.chars().last().unwrap_or(NULL);
             info.max_line_length = if last == LF {
                 info.lines += 1;
-                std::cmp::max(info.max_line_length, size - 1)
+                max(info.max_line_length, size - 1)
             } else {
-                std::cmp::max(info.max_line_length, size)
+                max(info.max_line_length, size)
             };
             info.chars += size;
             let mut words: Vec<&str> = line
@@ -130,18 +140,17 @@ fn process_reader<T: std::io::Read>(reader: T) -> FileInfoResult {
 
 macro_rules! println_stderr(
     ($($arg:tt)*) => (
-        match writeln!(&mut ::std::io::stderr(), $($arg)* ) {
+        match writeln!(&mut stderr(), $($arg)* ) {
             Ok(_) => {},
             Err(x) => panic!("Unable to write to stderr: {}", x),
         }
         )
         );
 
-// type NullDelimitedFileResult<'a> = Result<Vec<String>, ProcessingError>;
-type NullDelimitedFileResult = Result<Vec<String>, ProcessingError>;
+type NullDelimitedFileResult = WCResult<Vec<String>>;
 
-fn split_file_on_nulls<T: std::io::Read>(file: T) -> NullDelimitedFileResult {
-    let mut rbuf = std::io::BufReader::new(file);
+fn split_file_on_nulls<T: Read>(file: T) -> NullDelimitedFileResult {
+    let mut rbuf = BufReader::new(file);
     let mut result = Vec::new();
     let mut lbuf = Vec::new();
     loop {
@@ -150,7 +159,7 @@ fn split_file_on_nulls<T: std::io::Read>(file: T) -> NullDelimitedFileResult {
             break;
         }
         {
-            let line = try!(std::str::from_utf8(&lbuf));
+            let line = try!(from_utf8(&lbuf));
             result.push(line.trim_right_matches(NULL).to_string());
         }
         lbuf.clear()
@@ -165,26 +174,26 @@ fn main() {
 
     if args.flag_version {
         println!("wc v{}", VERSION);
-        std::process::exit(0);
+        exit(0);
     }
 
     if args.flag_files0_from.len() != 0  && args.arg_FILE.len() != 0 {
         println_stderr!("wc: file operands cannot be combined with --files0-from");
         println_stderr!("Try 'wc --help' for more information");
-        std::process::exit(1);
+        exit(1);
     }
 
     let mut files: Vec<String> = Vec::new();
     if args.flag_files0_from.len() != 0 {
         let split_results = match args.flag_files0_from.as_ref() {
-            "-" => split_file_on_nulls(std::io::stdin()),
+            "-" => split_file_on_nulls(stdin()),
             _ => {
-                match std::fs::File::open(&args.flag_files0_from) {
+                match File::open(&args.flag_files0_from) {
                     Ok(f) => split_file_on_nulls(f),
                     Err(e) => {
                         println_stderr!("wc: cannot open {} for reading: {}",
                                         args.flag_files0_from, e);
-                        std::process::exit(1);
+                        exit(1);
                     },
                 }
             },
@@ -194,12 +203,12 @@ fn main() {
             Err(e) => {
                 println_stderr!("wc: error reading {}: {}",
                                 args.flag_files0_from, e);
-                std::process::exit(1);
+                exit(1);
             },
         };
         if &args.flag_files0_from == "-" && files.contains(&"-".to_string()) {
             println_stderr!("wc: when reading file names from stdin, no file name of '-' allowed");
-            std::process::exit(1);
+            exit(1);
         }
     } else {
         files.extend(args.arg_FILE);
@@ -215,12 +224,12 @@ fn main() {
     };
     for filename in files {
         let result = match filename.as_ref() {
-            "-" => process_reader(std::io::stdin()),
+            "-" => process_reader(stdin()),
             _ => {
-                let file = std::fs::File::open(filename.to_string());
+                let file = File::open(filename.to_string());
                 match file {
                     Ok(f) => process_reader(f),
-                    Err(e) => Err(ProcessingError::IO(e)),
+                    Err(e) => Err(WCError::IO(e)),
                 }
             }
         };
@@ -230,8 +239,8 @@ fn main() {
                 totals.lines += r.lines;
                 totals.bytes += r.bytes;
                 totals.words += r.words;
-                totals.max_line_length = std::cmp::max(totals.max_line_length,
-                                                       r.max_line_length);
+                totals.max_line_length = max(totals.max_line_length,
+                                             r.max_line_length);
             },
             Err(_) => {},
         }
@@ -254,7 +263,6 @@ fn main() {
         let (ref filename, ref result) = *data;
         match *result {
             Ok(ref r) => {
-                // let mut parts = Vec::new();
                 let mut requested_field = false;
                 if args.flag_lines {
                     print!("{:1$} ", r.lines, field_size);
@@ -291,6 +299,6 @@ fn main() {
     }
 
     if errors_encountered {
-        std::process::exit(1);
+        exit(1);
     }
 }
