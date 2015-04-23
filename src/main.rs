@@ -109,16 +109,12 @@ fn process_reader<T: std::io::Read>(reader: T) -> FileInfoResult {
             // now we get an error here.
             let line = try!(std::str::from_utf8(&lbuf));
             let size = line.chars().count();
-            info.max_line_length = match line.chars().last() {
-                Some(c) => {
-                    if c == LF {
-                        info.lines += 1;
-                        std::cmp::max(info.max_line_length, size - 1)
-                    } else {
-                        std::cmp::max(info.max_line_length, size)
-                    }
-                },
-                None => std::cmp::max(info.max_line_length, size),
+            let last = line.chars().last().unwrap_or(NULL);
+            info.max_line_length = if last == LF {
+                info.lines += 1;
+                std::cmp::max(info.max_line_length, size - 1)
+            } else {
+                std::cmp::max(info.max_line_length, size)
             };
             info.chars += size;
             let mut words: Vec<&str> = line
