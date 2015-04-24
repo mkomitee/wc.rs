@@ -7,3 +7,4 @@ authors = ["Michael Komitee <mkomitee@gmail.com>"]
 [dependencies]
 docopt = "*"
 rustc-serialize = "*"
+threadpool = "*"

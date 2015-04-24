@@ -1,6 +1,9 @@
 extern crate rustc_serialize;
 extern crate docopt;
+extern crate threadpool;
 
+use docopt::Docopt;
+use std::thread;
 use std::cmp::max;
 use std::fmt::Result as FmtResult;
 use std::fmt::{Display, Formatter};
@@ -10,7 +13,6 @@ use std::io::{BufReader, stderr, stdin};
 use std::io::{Write, BufRead, Read};
 use std::process::exit;
 use std::str::{Utf8Error, from_utf8};
-use docopt::Docopt;
 
 static LF: char = '\n';
 static NULL: char = '\0';
@@ -92,9 +94,7 @@ struct FileInfo{
     max_line_length: usize,
 }
 
-type FileInfoResult = WCResult<FileInfo>;
-
-fn process_reader<T: Read>(reader: T) -> FileInfoResult {
+fn process_reader<T: Read>(reader: T) -> WCResult<FileInfo> {
     let mut info = FileInfo{
         bytes: 0,
         chars: 0,
@@ -147,9 +147,7 @@ macro_rules! println_stderr(
         )
         );
 
-type NullDelimitedFileResult = WCResult<Vec<String>>;
-
-fn split_file_on_nulls<T: Read>(file: T) -> NullDelimitedFileResult {
+fn split_file_on_nulls<T: Read>(file: T) -> WCResult<Vec<String>> {
     let mut rbuf = BufReader::new(file);
     let mut result = Vec::new();
     let mut lbuf = Vec::new();
@@ -165,6 +163,61 @@ fn split_file_on_nulls<T: Read>(file: T) -> NullDelimitedFileResult {
         lbuf.clear()
     }
     Ok(result)
+}
+
+// TODO: It seems a waste to return the string that was moved into
+// here, but I was having difficult retaining the string in the caller
+// long enough to make a borrow valid. Also, by returning it, we don't
+// need to maintain a JoinHandle to filename map.
+fn process_file(filename: String) -> (String, WCResult<FileInfo>) {
+    match filename.as_ref() {
+        "-" => (filename, process_reader(stdin())),
+        _ => {
+            let file = File::open(filename.to_string());
+            match file {
+                Ok(f) => (filename, process_reader(f)),
+                Err(e) => (filename, Err(WCError::IO(e))),
+            }
+        }
+    }
+}
+
+fn process_files(files: Vec<String>) -> Vec<(String, WCResult<FileInfo>)> {
+    let mut results = Vec::new();
+    let mut children = Vec::new();
+    let mut totals = FileInfo{
+        bytes: 0,
+        chars: 0,
+        lines: 0,
+        words: 0,
+        max_line_length: 0,
+    };
+
+    for filename in files {
+        let child = thread::spawn(move || {process_file(filename)});
+        children.push(child);
+    }
+
+    for child in children {
+        // This may panic if we have a problem spawning/joining threads.
+        let (filename, result) = child.join().unwrap();
+        match result {
+            Ok(ref r) => {
+                totals.chars += r.chars;
+                totals.lines += r.lines;
+                totals.bytes += r.bytes;
+                totals.words += r.words;
+                totals.max_line_length = max(totals.max_line_length,
+                                             r.max_line_length);
+            },
+            Err(_) => {},
+        }
+        results.push((filename, result));
+    }
+    if results.len() > 1 {
+        results.push(("total".to_string(), Ok(totals)));
+    }
+    results
 }
 
 fn main() {
@@ -214,51 +267,27 @@ fn main() {
         files.extend(args.arg_FILE);
     };
 
-    let mut results = Vec::new();
-    let mut totals = FileInfo{
-        bytes: 0,
-        chars: 0,
-        lines: 0,
-        words: 0,
-        max_line_length: 0,
-    };
-    for filename in files {
-        let result = match filename.as_ref() {
-            "-" => process_reader(stdin()),
-            _ => {
-                let file = File::open(filename.to_string());
-                match file {
-                    Ok(f) => process_reader(f),
-                    Err(e) => Err(WCError::IO(e)),
-                }
-            }
-        };
-        match result {
-            Ok(ref r) => {
-                totals.chars += r.chars;
-                totals.lines += r.lines;
-                totals.bytes += r.bytes;
-                totals.words += r.words;
-                totals.max_line_length = max(totals.max_line_length,
-                                             r.max_line_length);
-            },
-            Err(_) => {},
-        }
-        results.push((filename, result));
-    }
+    let results: Vec<(String, WCResult<FileInfo>)> = process_files(files);
+
+    // Present the results
 
     // This is used for formatting. The number in the byte count will
     // be the largest, and so will be the widest string, so it's
-    // suitable for a field width.
-    let field_size = totals.bytes.to_string().len();
-
-    if results.len() > 1 {
-        results.push(("total".to_string(), Ok(totals)));
-    }
+    // suitable for a field width. The last result will either be the
+    // only result, or the total, in which case it's guaranteed to be
+    // the largest.
+    let field_size = match results.last() {
+        Some(val) => {
+            let (_, ref result) = *val;
+            match *result {
+                Ok(ref info) => info.bytes.to_string().len(),
+                Err(_) => 1,
+            }
+        },
+        None => 1,
+    };
 
     let mut errors_encountered = false;
-
-    // Present the results
     for data in results.iter() {
         let (ref filename, ref result) = *data;
         match *result {
