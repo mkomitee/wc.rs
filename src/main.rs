@@ -161,6 +161,9 @@ fn display(args: &Args, filename: &str, result: &WCResult<FileInfo>,
     }
 }
 
+// Return the named file, but opened, and in a result that's usable as
+// a buffered reader. In the case of a filename "-", return an
+// appropriately wrapped Stdin.
 fn open_file(filename: &str) -> WCResult<Box<BufRead>> {
     match filename {
         "-" => Ok(Box::new(BufReader::new(stdin()))),
@@ -168,10 +171,10 @@ fn open_file(filename: &str) -> WCResult<Box<BufRead>> {
     }
 }
 
-fn process_reader<T: BufRead>(mut file: T) -> WCResult<FileInfo> {
+// TODO: Only to as much processing as is absolutely necessary to
+// provide the data we will end up printing.
+fn process_file<T: BufRead>(mut file: T) -> WCResult<FileInfo> {
     let mut info = FileInfo::new();
-    // TODO: Only to as much processing as is absolutely necessary to
-    // provide the data we will end up printing.
     let mut lbuf = Vec::new();
     loop {
         let size = try!(file.read_until(LF as u8, &mut lbuf));
@@ -205,7 +208,10 @@ fn process_reader<T: BufRead>(mut file: T) -> WCResult<FileInfo> {
     Ok(info)
 }
 
-fn split_file_on_nulls<T: BufRead>(mut file: T) -> WCResult<Vec<String>> {
+// Open the file (possibly - for stdin) and return an array of strings
+// reflecting the contents of the file, split on null characters.
+fn process_files0_from(filename: &str) -> WCResult<Vec<String>> {
+    let mut file = try!(open_file(filename));
     let mut result = Vec::new();
     let mut lbuf = Vec::new();
     loop {
@@ -213,6 +219,8 @@ fn split_file_on_nulls<T: BufRead>(mut file: T) -> WCResult<Vec<String>> {
         if size == 0 {
             break;
         }
+        // Create a scope because we're going to borrow lbuf and
+        // the borrow must end before we can clear it.
         {
             let line = try!(from_utf8(&lbuf));
             result.push(line.trim_right_matches(NULL).to_string());
@@ -241,15 +249,7 @@ fn main() {
 
     let mut files: Vec<String> = Vec::new();
     if args.flag_files0_from.len() != 0 {
-        let split_results = match open_file(args.flag_files0_from.as_ref()) {
-            Ok(f) => split_file_on_nulls(f),
-            Err(e) => {
-                println_stderr!("wc: cannot open {} for reading: {}",
-                                args.flag_files0_from, e);
-                exit(1);
-            },
-        };
-        match split_results {
+        match process_files0_from(args.flag_files0_from.as_ref()) {
             Ok(parts) => files.extend(parts),
             Err(e) => {
                 println_stderr!("wc: error reading {}: {}",
@@ -270,7 +270,7 @@ fn main() {
         .map(|f| f.as_ref())
         .map(|f|
              match open_file(f) {
-                 Ok(f) => process_reader(f),
+                 Ok(f) => process_file(f),
                  Err(e) => Err(e),
              })
         .collect();

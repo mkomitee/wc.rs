@@ -3,8 +3,8 @@ wc implemented in rust
 
 ## Is it any good?
 
-It works, ... but probably not. I have no idea what I'm doing in rust,
-and this is what I'm doing to teach myself.
+It works, ... but probably not a good example of rust code. I have no
+idea what I'm doing in rust, and this is what I'm doing to teach myself.
 
 ## Compiling & Using
 
@@ -22,7 +22,7 @@ target/debug/wc -h
   sufficient, one idea to improve performance is to only process data
   if it needs to be printed. This means handing off the set of required
   fields to process_reader, and short-circuiting some of the processing
-  used to extract `bytes`, `lines`, `chars`, `max_line_length`, or 
+  used to extract `bytes`, `lines`, `chars`, `max_line_length`, or
   `words` if they're not needed.
 * Figure out how to detect/handle non-utf8 encoded files. Right now
   wc.rs yields an error in such cases:
