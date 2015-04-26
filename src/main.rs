@@ -125,31 +125,20 @@ fn display(args: &Args, filename: &str, result: &WCResult<FileInfo>,
            field_size: usize) -> bool {
     match *result {
         Ok(ref r) => {
-            let mut requested_field = false;
             if args.flag_lines {
                 print!("{:1$} ", r.lines, field_size);
-                requested_field = true;
             }
             if args.flag_words {
                 print!("{:1$} ", r.words, field_size);
-                requested_field = true;
             }
             if args.flag_bytes {
                 print!("{:1$} ", r.bytes, field_size);
-                requested_field = true;
             }
             if args.flag_chars {
                 print!("{:1$} ", r.chars, field_size);
-                requested_field = true;
             }
             if args.flag_max_line_length {
                 print!("{:1$} ", r.max_line_length, field_size);
-                requested_field = true;
-            }
-            if !requested_field {
-                print!("{:1$} ", r.lines, field_size);
-                print!("{:1$} ", r.words, field_size);
-                print!("{:1$} ", r.bytes, field_size);
             }
             println!("{}", filename);
             true
@@ -161,6 +150,7 @@ fn display(args: &Args, filename: &str, result: &WCResult<FileInfo>,
     }
 }
 
+
 // Return the named file, but opened, and in a result that's usable as
 // a buffered reader. In the case of a filename "-", return an
 // appropriately wrapped Stdin.
@@ -171,9 +161,8 @@ fn open_file(filename: &str) -> WCResult<Box<BufRead>> {
     }
 }
 
-// TODO: Only to as much processing as is absolutely necessary to
-// provide the data we will end up printing.
-fn process_file<T: BufRead>(mut file: T) -> WCResult<FileInfo> {
+// TODO Only perform minimum processing based on requested data
+fn process_file<T: BufRead>(mut file: T, args: &Args) -> WCResult<FileInfo> {
     let mut info = FileInfo::new();
     let mut lbuf = Vec::new();
     loop {
@@ -182,27 +171,45 @@ fn process_file<T: BufRead>(mut file: T) -> WCResult<FileInfo> {
         if size == 0 {
             break;
         }
-        // Create a scope because we're going to borrow lbuf and
-        // the borrow must end before we can clear it.
-        {
-            // TODO: Handle files which are not utf8-encoded. Right
-            // now we get an error here.
-            let line = try!(from_utf8(&lbuf));
-            let size = line.chars().count();
-            let last = line.chars().last().unwrap_or(NULL);
-            info.max_line_length = if last == LF {
-                info.lines += 1;
-                max(info.max_line_length, size - 1)
-            } else {
-                max(info.max_line_length, size)
-            };
-            info.chars += size;
-            let mut words: Vec<&str> = line
-                .split(|c: char| c.is_whitespace())
-                .collect();
-            words.retain(|s: &&str| s.len() > 0);
-            info.words += words.len();
-        }
+        // If this if statement wasn't here, we would still need to
+        // create a scope because we're going to borrow lbuf and the
+        // borrow must end before we can clear it.
+        if args.flag_lines || args.flag_words || args.flag_chars ||
+            args.flag_max_line_length {
+                // TODO: Handle files which are not utf8-encoded. Right
+                // now we get an error here.
+                let line = try!(from_utf8(&lbuf));
+
+                let size = if args.flag_chars || args.flag_max_line_length {
+                    line.chars().count()
+                } else { 0 };
+
+                let last = if args.flag_lines || args.flag_max_line_length {
+                    line.chars().last().unwrap_or(NULL)
+                } else { NULL };
+
+                if last == LF {
+                    info.lines += 1;
+                }
+
+                if args.flag_max_line_length {
+                    info.max_line_length = if last == LF {
+                        max(info.max_line_length, size - 1)
+                    } else {
+                        max(info.max_line_length, size)
+                    };
+                }
+
+                info.chars += size;
+
+                if args.flag_words {
+                    let mut words: Vec<&str> = line
+                        .split(|c: char| c.is_whitespace())
+                        .collect();
+                    words.retain(|s: &&str| s.len() > 0);
+                    info.words += words.len();
+                }
+            }
         lbuf.clear()
     }
     Ok(info)
@@ -231,7 +238,7 @@ fn process_files0_from(filename: &str) -> WCResult<Vec<String>> {
 }
 
 fn main() {
-    let args: Args = Docopt::new(USAGE)
+    let mut args: Args = Docopt::new(USAGE)
         .and_then(|d| d.decode())
         .unwrap_or_else(|e| e.exit());
 
@@ -247,6 +254,12 @@ fn main() {
         exit(1);
     }
 
+    if !(args.flag_lines || args.flag_words || args.flag_bytes
+         || args.flag_chars || args.flag_max_line_length) {
+        args.flag_lines = true;
+        args.flag_words = true;
+        args.flag_bytes = true;
+    }
     let mut files: Vec<String> = Vec::new();
     if args.flag_files0_from.len() != 0 {
         match process_files0_from(args.flag_files0_from.as_ref()) {
@@ -270,7 +283,7 @@ fn main() {
         .map(|f| f.as_ref())
         .map(|f|
              match open_file(f) {
-                 Ok(f) => process_file(f),
+                 Ok(f) => process_file(f, &args),
                  Err(e) => Err(e),
              })
         .collect();
