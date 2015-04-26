@@ -92,9 +92,15 @@ struct FileInfo{
     max_line_length: usize,
 }
 
-type FileInfoResult = WCResult<FileInfo>;
 
-fn process_reader<T: Read>(reader: T) -> FileInfoResult {
+fn open_file(filename: &str) -> WCResult<Box<BufRead>> {
+    match filename {
+        "-" => Ok(Box::new(BufReader::new(stdin()))),
+        _ => Ok(Box::new(BufReader::new(try!(File::open(filename))))),
+    }
+}
+
+fn process_reader<T: BufRead>(mut file: T) -> WCResult<FileInfo> {
     let mut info = FileInfo{
         bytes: 0,
         chars: 0,
@@ -104,10 +110,9 @@ fn process_reader<T: Read>(reader: T) -> FileInfoResult {
     };
     // TODO: Only to as much processing as is absolutely necessary to
     // provide the data we will end up printing.
-    let mut rbuf = BufReader::new(reader);
     let mut lbuf = Vec::new();
     loop {
-        let size = try!(rbuf.read_until(LF as u8, &mut lbuf));
+        let size = try!(file.read_until(LF as u8, &mut lbuf));
         info.bytes += size;
         if size == 0 {
             break;
@@ -147,14 +152,11 @@ macro_rules! println_stderr(
         )
         );
 
-type NullDelimitedFileResult = WCResult<Vec<String>>;
-
-fn split_file_on_nulls<T: Read>(file: T) -> NullDelimitedFileResult {
-    let mut rbuf = BufReader::new(file);
+fn split_file_on_nulls<T: BufRead>(mut file: T) -> WCResult<Vec<String>> {
     let mut result = Vec::new();
     let mut lbuf = Vec::new();
     loop {
-        let size = try!(rbuf.read_until(NULL as u8, &mut lbuf));
+        let size = try!(file.read_until(NULL as u8, &mut lbuf));
         if size == 0 {
             break;
         }
@@ -185,17 +187,12 @@ fn main() {
 
     let mut files: Vec<String> = Vec::new();
     if args.flag_files0_from.len() != 0 {
-        let split_results = match args.flag_files0_from.as_ref() {
-            "-" => split_file_on_nulls(stdin()),
-            _ => {
-                match File::open(&args.flag_files0_from) {
-                    Ok(f) => split_file_on_nulls(f),
-                    Err(e) => {
-                        println_stderr!("wc: cannot open {} for reading: {}",
-                                        args.flag_files0_from, e);
-                        exit(1);
-                    },
-                }
+        let split_results = match open_file(args.flag_files0_from.as_ref()) {
+            Ok(f) => split_file_on_nulls(f),
+            Err(e) => {
+                println_stderr!("wc: cannot open {} for reading: {}",
+                                args.flag_files0_from, e);
+                exit(1);
             },
         };
         match split_results {
@@ -223,15 +220,9 @@ fn main() {
         max_line_length: 0,
     };
     for filename in files {
-        let result = match filename.as_ref() {
-            "-" => process_reader(stdin()),
-            _ => {
-                let file = File::open(filename.to_string());
-                match file {
-                    Ok(f) => process_reader(f),
-                    Err(e) => Err(WCError::IO(e)),
-                }
-            }
+        let result = match open_file(filename.as_ref()) {
+            Ok(f) => process_reader(f),
+            Err(e) => Err(e),
         };
         match result {
             Ok(ref r) => {
