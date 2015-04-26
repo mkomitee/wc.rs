@@ -55,6 +55,24 @@ struct Args {
     flag_files0_from: String,
 }
 
+macro_rules! print_stderr(
+    ($($arg:tt)*) => (
+        match write!(&mut stderr(), $($arg)* ) {
+            Ok(_) => {},
+            Err(x) => panic!("Unable to write to stderr: {}", x),
+        }
+        )
+        );
+
+macro_rules! println_stderr(
+    ($($arg:tt)*) => (
+        match writeln!(&mut stderr(), $($arg)* ) {
+            Ok(_) => {},
+            Err(x) => panic!("Unable to write to stderr: {}", x),
+        }
+        )
+        );
+
 #[derive(Debug)]
 enum WCError {
     IO(IOError),
@@ -103,6 +121,46 @@ impl FileInfo {
     }
 }
 
+fn display(args: &Args, filename: &str, result: &WCResult<FileInfo>,
+           field_size: usize) -> bool {
+    match *result {
+        Ok(ref r) => {
+            let mut requested_field = false;
+            if args.flag_lines {
+                print!("{:1$} ", r.lines, field_size);
+                requested_field = true;
+            }
+            if args.flag_words {
+                print!("{:1$} ", r.words, field_size);
+                requested_field = true;
+            }
+            if args.flag_bytes {
+                print!("{:1$} ", r.bytes, field_size);
+                requested_field = true;
+            }
+            if args.flag_chars {
+                print!("{:1$} ", r.chars, field_size);
+                requested_field = true;
+            }
+            if args.flag_max_line_length {
+                print!("{:1$} ", r.max_line_length, field_size);
+                requested_field = true;
+            }
+            if !requested_field {
+                print!("{:1$} ", r.lines, field_size);
+                print!("{:1$} ", r.words, field_size);
+                print!("{:1$} ", r.bytes, field_size);
+            }
+            println!("{}", filename);
+            true
+        },
+        Err(ref e) => {
+            println_stderr!("wc: {}: {}", filename, e);
+            false
+        },
+    }
+}
+
 fn open_file(filename: &str) -> WCResult<Box<BufRead>> {
     match filename {
         "-" => Ok(Box::new(BufReader::new(stdin()))),
@@ -147,15 +205,6 @@ fn process_reader<T: BufRead>(mut file: T) -> WCResult<FileInfo> {
     Ok(info)
 }
 
-macro_rules! println_stderr(
-    ($($arg:tt)*) => (
-        match writeln!(&mut stderr(), $($arg)* ) {
-            Ok(_) => {},
-            Err(x) => panic!("Unable to write to stderr: {}", x),
-        }
-        )
-        );
-
 fn split_file_on_nulls<T: BufRead>(mut file: T) -> WCResult<Vec<String>> {
     let mut result = Vec::new();
     let mut lbuf = Vec::new();
@@ -184,7 +233,8 @@ fn main() {
     }
 
     if args.flag_files0_from.len() != 0  && args.arg_FILE.len() != 0 {
-        println_stderr!("wc: file operands cannot be combined with --files0-from");
+        print_stderr!("wc: file operands cannot be combined with ");
+        println_stderr!("--files0-from");
         println_stderr!("Try 'wc --help' for more information");
         exit(1);
     }
@@ -208,14 +258,15 @@ fn main() {
             },
         };
         if &args.flag_files0_from == "-" && files.contains(&"-".to_string()) {
-            println_stderr!("wc: when reading file names from stdin, no file name of '-' allowed");
+            print_stderr!("wc: when reading file names from stdin, no file ");
+            println_stderr!("name of '-' allowed");
             exit(1);
         }
     } else {
-        files.extend(args.arg_FILE);
+        files.extend(args.arg_FILE.clone());
     };
 
-    let mut results: Vec<WCResult<FileInfo>> = files.iter()
+    let results: Vec<WCResult<FileInfo>> = files.iter()
         .map(|f| f.as_ref())
         .map(|f|
              match open_file(f) {
@@ -234,7 +285,8 @@ fn main() {
                   chars: acc.chars + item.chars,
                   lines: acc.lines + item.lines,
                   words: acc.words + item.words,
-                  max_line_length: max(acc.max_line_length, item.max_line_length),
+                  max_line_length: max(acc.max_line_length,
+                                       item.max_line_length),
               });
 
     // This is used for formatting. The number in the byte count will
@@ -242,53 +294,18 @@ fn main() {
     // suitable for a field width.
     let field_size = total.bytes.to_string().len();
 
-    if files.len() > 1 {
-        files.push("total".to_string());
-        results.push(Ok(total));
-    }
-
-    let mut errors_encountered = false;
+    // For determining eventual exit code
+    let mut ok = true;
 
     // Present the results
     for data in files.iter().zip(results.iter()) {
         let (filename, result) = data;
-        match *result {
-            Ok(ref r) => {
-                let mut requested_field = false;
-                if args.flag_lines {
-                    print!("{:1$} ", r.lines, field_size);
-                    requested_field = true;
-                }
-                if args.flag_words {
-                    print!("{:1$} ", r.words, field_size);
-                    requested_field = true;
-                }
-                if args.flag_bytes {
-                    print!("{:1$} ", r.bytes, field_size);
-                    requested_field = true;
-                }
-                if args.flag_chars {
-                    print!("{:1$} ", r.chars, field_size);
-                    requested_field = true;
-                }
-                if args.flag_max_line_length {
-                    print!("{:1$} ", r.max_line_length, field_size);
-                    requested_field = true;
-                }
-                if !requested_field {
-                    print!("{:1$} ", r.lines, field_size);
-                    print!("{:1$} ", r.words, field_size);
-                    print!("{:1$} ", r.bytes, field_size);
-                }
-                println!("{}", filename);
-            },
-            Err(ref e) => {
-                errors_encountered = true;
-                println_stderr!("wc: {}: {}", filename, e);
-            },
-        }
+        ok &= display(&args, filename, result, field_size)
     }
-    if errors_encountered {
+    if results.len() > 1 {
+        display(&args, "-", &Ok(total), field_size);
+    }
+    if !ok {
         exit(1);
     }
 }
