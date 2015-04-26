@@ -92,6 +92,16 @@ struct FileInfo{
     max_line_length: usize,
 }
 
+impl FileInfo {
+    fn new() -> FileInfo {
+        FileInfo{bytes: 0,
+                 chars: 0,
+                 lines: 0,
+                 words: 0,
+                 max_line_length: 0,
+        }
+    }
+}
 
 fn open_file(filename: &str) -> WCResult<Box<BufRead>> {
     match filename {
@@ -101,13 +111,7 @@ fn open_file(filename: &str) -> WCResult<Box<BufRead>> {
 }
 
 fn process_reader<T: BufRead>(mut file: T) -> WCResult<FileInfo> {
-    let mut info = FileInfo{
-        bytes: 0,
-        chars: 0,
-        lines: 0,
-        words: 0,
-        max_line_length: 0,
-    };
+    let mut info = FileInfo::new();
     // TODO: Only to as much processing as is absolutely necessary to
     // provide the data we will end up printing.
     let mut lbuf = Vec::new();
@@ -211,47 +215,43 @@ fn main() {
         files.extend(args.arg_FILE);
     };
 
-    let mut results = Vec::new();
-    let mut totals = FileInfo{
-        bytes: 0,
-        chars: 0,
-        lines: 0,
-        words: 0,
-        max_line_length: 0,
-    };
-    for filename in files {
-        let result = match open_file(filename.as_ref()) {
-            Ok(f) => process_reader(f),
-            Err(e) => Err(e),
-        };
-        match result {
-            Ok(ref r) => {
-                totals.chars += r.chars;
-                totals.lines += r.lines;
-                totals.bytes += r.bytes;
-                totals.words += r.words;
-                totals.max_line_length = max(totals.max_line_length,
-                                             r.max_line_length);
-            },
-            Err(_) => {},
-        }
-        results.push((filename, result));
-    }
+    let mut results: Vec<WCResult<FileInfo>> = files.iter()
+        .map(|f| f.as_ref())
+        .map(|f|
+             match open_file(f) {
+                 Ok(f) => process_reader(f),
+                 Err(e) => Err(e),
+             })
+        .collect();
+
+    let total: FileInfo = results.iter()
+        .filter(|r| r.as_ref().is_ok())
+        .map(|r| r.as_ref().unwrap())
+        .fold(FileInfo::new(),
+              |acc, item|
+              FileInfo{
+                  bytes: acc.bytes + item.bytes,
+                  chars: acc.chars + item.chars,
+                  lines: acc.lines + item.lines,
+                  words: acc.words + item.words,
+                  max_line_length: max(acc.max_line_length, item.max_line_length),
+              });
 
     // This is used for formatting. The number in the byte count will
     // be the largest, and so will be the widest string, so it's
     // suitable for a field width.
-    let field_size = totals.bytes.to_string().len();
+    let field_size = total.bytes.to_string().len();
 
-    if results.len() > 1 {
-        results.push(("total".to_string(), Ok(totals)));
+    if files.len() > 1 {
+        files.push("total".to_string());
+        results.push(Ok(total));
     }
 
     let mut errors_encountered = false;
 
     // Present the results
-    for data in results.iter() {
-        let (ref filename, ref result) = *data;
+    for data in files.iter().zip(results.iter()) {
+        let (filename, result) = data;
         match *result {
             Ok(ref r) => {
                 let mut requested_field = false;
@@ -288,7 +288,6 @@ fn main() {
             },
         }
     }
-
     if errors_encountered {
         exit(1);
     }
