@@ -305,7 +305,11 @@ fn main() {
     // This is used for formatting. The number in the byte count will
     // be the largest, and so will be the widest string, so it's
     // suitable for a field width.
-    let field_size = total.bytes.to_string().len();
+    let field_size = if args.flag_files0_from == "-" {
+        0
+    } else {
+        total.bytes.to_string().len()
+    };
 
     // For determining eventual exit code
     let mut ok = true;
