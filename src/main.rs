@@ -316,7 +316,7 @@ fn main() {
         ok &= display(&args, filename, result, field_size)
     }
     if results.len() > 1 {
-        display(&args, "-", &Ok(total), field_size);
+        display(&args, "total", &Ok(total), field_size);
     }
     if !ok {
         exit(1);
