@@ -1,6 +1,7 @@
 extern crate rustc_serialize;
 extern crate docopt;
 
+use std::error::Error;
 use std::cmp::max;
 use std::fmt::Result as FmtResult;
 use std::fmt::{Display, Formatter};
@@ -55,52 +56,81 @@ struct Args {
     flag_files0_from: String,
 }
 
+// Macro that acts like print!, but w/ stderr
 macro_rules! print_stderr(
     ($($arg:tt)*) => (
         match write!(&mut stderr(), $($arg)* ) {
             Ok(_) => {},
             Err(x) => panic!("Unable to write to stderr: {}", x),
         }
-        )
-        );
+    )
+);
 
+// Macro that acts like println!, but w/ stderr
 macro_rules! println_stderr(
     ($($arg:tt)*) => (
         match writeln!(&mut stderr(), $($arg)* ) {
             Ok(_) => {},
             Err(x) => panic!("Unable to write to stderr: {}", x),
         }
-        )
-        );
+    )
+);
 
+// Enum that captures all of the expected error variants we are likely
+// to return.
 #[derive(Debug)]
 enum WCError {
     IO(IOError),
     Utf8(Utf8Error),
 }
 
-type WCResult<T> = Result<T, WCError>;
-
+// Implement the Display trait so that we can print our errors to the
+// user. Also a pre-requisite for implementing the Error trait.
 impl Display for WCError {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         match *self {
-            WCError::IO(ref e) => write!(f, "{}", e),
-            WCError::Utf8(ref e) => write!(f, "{}", e),
+            WCError::IO(ref e) => e.fmt(f),
+            WCError::Utf8(ref e) => e.fmt(f),
         }
     }
 }
 
+// Implement the Error trait so that callers can treat a WCError as
+// they would any other error.
+impl std::error::Error for WCError {
+    fn description(&self) -> &str {
+        match *self {
+            WCError::IO(ref e) => e.description(),
+            WCError::Utf8(ref e) => e.description()
+        }
+    }
+
+    fn cause(&self) -> Option<&std::error::Error> {
+        match *self {
+            WCError::IO(ref e) => e.cause(),
+            WCError::Utf8(ref e) => e.cause()
+        }
+    }
+}
+
+
+// Make it possible to wrap an IOError as a variant of our WCError enum.
 impl From<IOError> for WCError {
     fn from(e: IOError) -> WCError {
         WCError::IO(e)
     }
 }
+
+// Make it possible to wrap a Utf8Error as a variant of our WCError enum.
 impl From<Utf8Error> for WCError {
     fn from(e: Utf8Error) -> WCError {
         WCError::Utf8(e)
     }
 }
 
+// Define the struct which will wrap all of our counts. Derive the
+// Debug trait so we can print it out using the "{:?}" pattern for
+// debugging purposes.
 #[derive(Debug)]
 struct FileInfo{
     bytes: usize,
@@ -110,6 +140,11 @@ struct FileInfo{
     max_line_length: usize,
 }
 
+// Implement a convenience constructor that will return a zeroed
+// FileInfo struct. I had considered implementing the Zero and Add
+// traits and using sum to acquire our "total" instead of a fold, but
+// the behavior of max_line_length just doesn't look like add to me,
+// and it may be more confusing that it's worth.
 impl FileInfo {
     fn new() -> FileInfo {
         FileInfo{bytes: 0,
@@ -121,6 +156,11 @@ impl FileInfo {
     }
 }
 
+// Wrapper around Result that specializes the Error variant to be one
+// of our WCErrors.
+type WCResult<T> = Result<T, WCError>;
+
+// Print the result of attempting to process a file.
 fn display(args: &Args, filename: &str, result: &WCResult<FileInfo>,
            field_size: usize) -> bool {
     match *result {
@@ -153,7 +193,8 @@ fn display(args: &Args, filename: &str, result: &WCResult<FileInfo>,
 
 // Return the named file, but opened, and in a result that's usable as
 // a buffered reader. In the case of a filename "-", return an
-// appropriately wrapped Stdin.
+// appropriately wrapped Stdin. Doing this allows us to treat regular
+// files and stdin equivalently.
 fn open_file(filename: &str) -> WCResult<Box<BufRead>> {
     match filename {
         "-" => Ok(Box::new(BufReader::new(stdin()))),
@@ -161,7 +202,6 @@ fn open_file(filename: &str) -> WCResult<Box<BufRead>> {
     }
 }
 
-// TODO Only perform minimum processing based on requested data
 fn process_file<T: BufRead>(mut file: T, args: &Args) -> WCResult<FileInfo> {
     let mut info = FileInfo::new();
     let mut lbuf = Vec::new();
@@ -288,6 +328,8 @@ fn main() {
              })
         .collect();
 
+    // Fold over the FileInfo results which are of the Ok variant to
+    // compute the "total".
     let total: FileInfo = results.iter()
         .filter(|r| r.as_ref().is_ok())
         .map(|r| r.as_ref().unwrap())
