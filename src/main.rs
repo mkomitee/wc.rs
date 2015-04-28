@@ -202,7 +202,8 @@ fn open_file(filename: &str) -> WCResult<Box<BufRead>> {
     }
 }
 
-fn process_file<T: BufRead>(mut file: T, args: &Args) -> WCResult<FileInfo> {
+fn process_file(filename: &str, args: &Args) -> WCResult<FileInfo> {
+    let mut file = try!(open_file(filename));
     let mut info = FileInfo::new();
     let mut lbuf = Vec::new();
     loop {
@@ -294,12 +295,15 @@ fn main() {
         exit(1);
     }
 
+    // If no data is specifically requested, default to lines/words/bytes
     if !(args.flag_lines || args.flag_words || args.flag_bytes
          || args.flag_chars || args.flag_max_line_length) {
         args.flag_lines = true;
         args.flag_words = true;
         args.flag_bytes = true;
     }
+
+    // Determine what "files" to process
     let mut files: Vec<String> = Vec::new();
     if args.flag_files0_from.len() != 0 {
         match process_files0_from(args.flag_files0_from.as_ref()) {
@@ -319,13 +323,9 @@ fn main() {
         files.extend(args.arg_FILE.clone());
     };
 
+    // Process all of our files
     let results: Vec<WCResult<FileInfo>> = files.iter()
-        .map(|f| f.as_ref())
-        .map(|f|
-             match open_file(f) {
-                 Ok(f) => process_file(f, &args),
-                 Err(e) => Err(e),
-             })
+        .map(|f| process_file(f, &args))
         .collect();
 
     // Fold over the FileInfo results which are of the Ok variant to
