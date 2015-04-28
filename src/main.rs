@@ -13,10 +13,10 @@ use std::process::exit;
 use std::str::{Utf8Error, from_utf8};
 use docopt::Docopt;
 
-static LF: char = '\n';
-static NULL: char = '\0';
-static VERSION: &'static str = "0.0.1";
-static USAGE: &'static str = "
+const LF: char = '\n';
+const NULL: char = '\0';
+const VERSION: &'static str = "0.0.1";
+const USAGE: &'static str = "
 Usage: wc [options] FILE...
        wc [options] --files0-from=F
        wc (-h|--help)
