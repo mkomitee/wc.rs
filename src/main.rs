@@ -1,8 +1,9 @@
 extern crate rustc_serialize;
 extern crate docopt;
 
-use std::error::Error;
+use docopt::Docopt;
 use std::cmp::max;
+use std::error::Error;
 use std::fmt::Result as FmtResult;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
@@ -11,7 +12,6 @@ use std::io::{BufReader, stderr, stdin};
 use std::io::{Write, BufRead, Read};
 use std::process::exit;
 use std::str::{Utf8Error, from_utf8};
-use docopt::Docopt;
 
 const LF: char = '\n';
 const NULL: char = '\0';
